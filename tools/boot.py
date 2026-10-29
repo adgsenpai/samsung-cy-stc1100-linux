@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from emu import Camera, Emulator, default_paths  # noqa: E402
+from qbox2h264 import boxes, nal_units  # noqa: E402
 
 STEPS = ["reset", "clock", "sysdata", "load", "bringup", "stream"]
 
@@ -22,9 +23,18 @@ def main():
     ap.add_argument("--until", choices=STEPS, default="stream")
     ap.add_argument("--seconds", type=float, default=10, help="how long to stream")
     ap.add_argument("--out", default="capture", help="directory for the recorded stream")
+    ap.add_argument("--fps", type=int, default=30, help="request this frame rate (camera max 30); 0 = leave default")
+    ap.add_argument("--live", action="store_true",
+                    help="write the 720p stream as raw H.264 to stdout (pipe into ffplay); logs go to stderr")
     ap.add_argument("-v", "--verbose", action="store_true", help="log every USB transfer")
     a = ap.parse_args()
     stop = STEPS.index(a.until)
+    video_out = None
+    if a.live:
+        # Keep a handle on the real stdout for video and send everything else to stderr.
+        video_out = os.fdopen(os.dup(1), "wb", buffering=0)
+        os.dup2(2, 1)
+        sys.stdout = sys.stderr
 
     lib, fw = default_paths()
     # Start from the bootloader even if a previous run left firmware running.
@@ -75,18 +85,31 @@ def main():
     # CMoIPCamera::Play in "Skype call mode": start the encoders, then let
     # the firmware event thread (created by MWare_Run) move the bitstream.
     print(f"vcmd_estart -> {emu.call('vcmd_estart', 1)}")
+    if a.fps:
+        # "Skype call mode" runs at 15 fps with adaptive frame rate; ask for more.
+        print(f"vcmd_EnableAFR(0) -> {emu.call('vcmd_EnableAFR', 0)}")
+        print(f"vcmd_videofr({a.fps}) -> {emu.call('vcmd_videofr', a.fps)}")
     # The firmware's bitstream reaches cbQBoxDemuxer(data, length) as QBox
     # blocks; on the TV it goes on to the camera object. Save it instead.
     os.makedirs(a.out, exist_ok=True)
     qbox_path = os.path.join(a.out, "stream.qbx")
-    qbox = open(qbox_path, "wb")
+    # Live viewing streams for as long as you like; don't fill the disk with it.
+    qbox = open(os.devnull if a.live else qbox_path, "wb")
     stats = {"blocks": 0, "bytes": 0}
 
     def on_qbox():
         data, length = emu.arg(0), emu.arg(1)
-        qbox.write(emu.read(data, length))
+        block = emu.read(data, length)
+        qbox.write(block)
         stats["blocks"] += 1
         stats["bytes"] += length
+        if video_out:
+            for stype, sid, _, payload in boxes(block):
+                if stype == 2 and sid == 2:
+                    try:
+                        video_out.write(nal_units(payload))
+                    except BrokenPipeError:
+                        raise SystemExit("viewer closed")
         emu._ret(0)
 
     emu.override("cbQBoxDemuxer", on_qbox)

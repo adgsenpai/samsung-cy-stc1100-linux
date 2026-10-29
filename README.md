@@ -56,8 +56,18 @@ protocol can be read from it with `tools/disasm.py`.
 - [x] Firmware load and run — every section verified by read-back
 - [x] Sensor (OV2640), audio codec (WM8750L) and encoder bring-up
 - [x] **Video!** QBox stream captured, demuxed to H.264: 1280×720 and 640×480 Baseline, ~2.8 Mbit/s, plus 24 kHz PCM audio
-- [ ] Full frame rate (currently ~15 fps: the emulated event loop drains the stream too slowly)
-- [ ] Expose as a live webcam (v4l2loopback)
+- [x] **Live view**: `--live` streams the 720p H.264 to stdout for ffplay
+- [ ] 30 fps: the encoder runs at a steady 15 fps (QBox timestamps 6000 ticks apart at 90 kHz), most likely the OV2640's limit at full resolution; `vcmd_videofr(30)` has no effect. Try a smaller sensor mode.
+- [ ] Expose as a webcam device (v4l2loopback)
+
+## Watch it live
+
+```bash
+sudo .venv/bin/python tools/boot.py --live --fps 0 --seconds 3600 2>live.log \
+  | ffplay -f h264 -framerate 15 -fflags nobuffer -flags low_delay -framedrop -window_title "CY-STC1100" -i -
+```
+
+Only the camera side runs as root; ffplay runs as you, so it can open a window.
 
 ## Record a clip
 
