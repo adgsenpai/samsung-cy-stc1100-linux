@@ -84,7 +84,7 @@ from `pthread_create`) is run to move the bitstream, which arrives at
 ## Tools
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install capstone pyelftools pyusb
+python3 -m venv .venv && .venv/bin/pip install capstone pyelftools pyusb unicorn
 
 # disassemble functions (or 0xADDR[:SIZE]) from Samsung's library, calls and strings labelled
 .venv/bin/python tools/disasm.py research/emp/x10p/libMoIPCamera_2058.so qhalqcc_read
