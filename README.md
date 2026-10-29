@@ -3,6 +3,30 @@
 Goal: use the Samsung CY-STC1100 Skype TV camera (USB `04e8:2058`, "MoIP_HD")
 as a webcam on Linux.
 
+## Findings at a glance
+
+- **It works.** The camera boots, encodes and streams on a stock Linux PC, with
+  no Samsung TV: H.264 at 1280×720 and 640×480, plus 24 kHz PCM from its
+  microphones, viewable live in ffplay.
+- **No reimplementation needed.** Samsung's own TV driver
+  (`libMoIPCamera_2058.so`, ARM) runs unmodified in the Unicorn emulator, with
+  its USB calls routed to the real camera through pyusb.
+- **The MG3500 bootloader protocol is fully mapped**: eight vendor control
+  requests plus two bulk endpoints (table below), the soft reboot (`0xBE`),
+  and the boot order the TV used.
+- **The output is QBox** (Mobilygen's container) wrapping length-prefixed
+  H.264 NAL units; `tools/qbox2h264.py` turns it into Annex-B H.264.
+- **15 fps, not 30.** Stream timestamps show a steady 15 fps (frames 6000 ticks
+  apart on a 90 kHz clock); requesting 30 via `vcmd_videofr` changes nothing.
+  Most likely the OV2640's limit at full resolution.
+- **Image quality is poor.** The OV2640 is a small 2 MP phone-class sensor, so
+  low light gives grain and a purple cast. Autofocus (`SetAutoFocus` /
+  `AFSetup`) and bitrate (`vcmd_vbitrate`, about 2.8 Mbit/s by default) are not
+  tuned yet. Expect a 2011 Skype TV camera, not a modern webcam.
+
+Not done: autofocus, bitrate tuning, a 30 fps sensor mode, and exposing it as
+a `/dev/video` device through v4l2loopback.
+
 ## Why it doesn't just work
 
 The camera holds only a bootloader. A Samsung TV uploads firmware into the
