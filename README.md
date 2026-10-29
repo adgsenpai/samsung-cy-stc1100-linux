@@ -52,11 +52,34 @@ protocol can be read from it with `tools/disasm.py`.
 - [x] Device identified; firmware (`mgfw_2058.bin`) and Samsung's driver library located
 - [x] USB protocol decoded from the library
 - [x] **Read-only probe works** (`tools/probe.py`): chip ID `0x0303` — matches what Samsung's code expects
-- [ ] Reset + clock setup
-- [ ] Firmware load and run
-- [ ] Sensor / encoder bring-up
-- [ ] Read the QBox stream, demux to H.264, play with ffmpeg
-- [ ] Expose as a webcam (v4l2loopback)
+- [x] Reset + clock setup (600 MHz PLL locks)
+- [x] Firmware load and run — every section verified by read-back
+- [x] Sensor (OV2640), audio codec (WM8750L) and encoder bring-up
+- [x] **Video!** QBox stream captured, demuxed to H.264: 1280×720 and 640×480 Baseline, ~2.8 Mbit/s, plus 24 kHz PCM audio
+- [ ] Full frame rate (currently ~15 fps: the emulated event loop drains the stream too slowly)
+- [ ] Expose as a live webcam (v4l2loopback)
+
+## Record a clip
+
+```bash
+sudo .venv/bin/python tools/boot.py --seconds 10     # reboot camera, load firmware, record capture/stream.qbx
+python3 tools/qbox2h264.py capture/stream.qbx capture/cam   # -> capture/cam_2.h264 (720p), cam_4.h264, cam_audio.pcm
+ffmpeg -r 30 -f h264 -i capture/cam_2.h264 -c copy capture/cam.mp4
+```
+
+### How it runs
+
+`tools/boot.py` does not re-implement the camera's boot logic. It runs Samsung's
+own `libMoIPCamera_2058.so` (ARM) inside the Unicorn emulator (`tools/emu.py`),
+giving it a minimal C library and routing its USB calls to the real camera
+through pyusb. The emulated code can only reach the functions `emu.py`
+provides: it can read the firmware file and write only into the output folder.
+The steps follow the TV's `CMoIPCameraInitThread::t_Main` and `CMoIPCamera::Play`:
+soft reboot (`0xBE`) → reset → 600 MHz clock → system data → load and run
+`mgfw_2058.bin` → MWare / SystemControl → OV2640 → WM8750L → `mg3500init` →
+`MWare_Run` → `vcmd_estart(1)`, then the firmware's event thread (captured
+from `pthread_create`) is run to move the bitstream, which arrives at
+`cbQBoxDemuxer` and is saved.
 
 ## Tools
 
